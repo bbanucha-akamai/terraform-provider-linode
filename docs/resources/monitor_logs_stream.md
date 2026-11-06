@@ -60,6 +60,22 @@ resource "linode_monitor_logs_stream" "lke_example" {
 }
 ```
 
+Creating a VPN Gateway IPsec logs stream:
+
+```terraform
+resource "linode_monitor_logs_stream" "vpn_example" {
+  label        = "my-vpn-ipsec-stream"
+  type         = "vpngw_ipsec_logs"
+  destinations = [linode_monitor_logs_destination.destination.id]
+
+  details = {
+    vpn_gateway_ids = [50, 60]
+  }
+}
+```
+
+Use `vpngw_bgp_logs` for BGP logs with the same details configuration.
+
 ## Argument Reference
 
 The following arguments are supported:
@@ -68,15 +84,17 @@ The following arguments are supported:
 
 * `label` - (Required) The label of the logs stream.
 
-* `type` - (Required, Forces New) The type of the logs stream. One of: `audit_logs`, `lke_audit_logs`.
+* `type` - (Required, Forces New) The type of the logs stream. One of: `audit_logs`, `lke_audit_logs`, `vpngw_ipsec_logs`, `vpngw_bgp_logs`.
 
 * `destinations` - (Required) The list of logs destination IDs attached to this stream.
 
 * `status` - (Optional) The status of the logs stream. One of: `active`, `inactive`, `provisioning`, `deactivating`.
 
-* [`details`](#details) - (Optional, Nested Attribute) Additional configuration details. Only applies to `lke_audit_logs` streams. Referenced directly (e.g. `details.cluster_ids`).
+* [`details`](#details) - (Optional, Nested Attribute) Additional configuration details for LKE or VPN Gateway streams. Required for VPN Gateway streams. Referenced directly (e.g. `details.vpn_gateway_ids`).
 
 ### details
+
+* `vpn_gateway_ids` - (Optional) A non-empty set of positive VPN Gateway IDs. Required for VPN Gateway streams and cannot be combined with LKE settings. Updates replace the entire set; ordering does not affect the configuration.
 
 * `cluster_ids` - (Optional) The list of LKE cluster IDs to include in this stream.
 

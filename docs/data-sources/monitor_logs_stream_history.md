@@ -39,7 +39,7 @@ In addition to all arguments above, the following attributes are exported:
 
   * `label` - The label of the logs stream at this version.
 
-  * `type` - The type of the logs stream at this version. One of: `audit_logs`, `lke_audit_logs`.
+  * `type` - The type of the logs stream at this version. One of: `audit_logs`, `lke_audit_logs`, `vpngw_ipsec_logs`, `vpngw_bgp_logs`.
 
   * `status` - The status of the logs stream at this version.
 
@@ -58,6 +58,8 @@ In addition to all arguments above, the following attributes are exported:
   * [`details`](#details) - (Nested Attribute) Additional configuration details at this version. Referenced directly (e.g. `streams[0].details.cluster_ids`).
 
 ### details
+
+* `vpn_gateway_ids` - The set of VPN Gateway IDs included in this stream version. Null for non-VPN streams.
 
 * `cluster_ids` - The LKE cluster IDs included in this stream version.
 

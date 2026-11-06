@@ -16,7 +16,7 @@ var streamHistoryAttributes = map[string]schema.Attribute{
 		Computed:    true,
 	},
 	"type": schema.StringAttribute{
-		Description: "The type of the logs stream (audit_logs or lke_audit_logs).",
+		Description: "The type of the logs stream (audit_logs, lke_audit_logs, vpngw_ipsec_logs, or vpngw_bgp_logs).",
 		Computed:    true,
 	},
 	"status": schema.StringAttribute{
@@ -36,6 +36,11 @@ var streamHistoryAttributes = map[string]schema.Attribute{
 		Description: "Additional configuration details at this version.",
 		Computed:    true,
 		Attributes: map[string]schema.Attribute{
+			"vpn_gateway_ids": schema.SetAttribute{
+				Description: "The VPN Gateway IDs included in this stream version.",
+				Computed:    true,
+				ElementType: types.Int64Type,
+			},
 			"cluster_ids": schema.ListAttribute{
 				Description: "The LKE cluster IDs included in this stream version.",
 				Computed:    true,

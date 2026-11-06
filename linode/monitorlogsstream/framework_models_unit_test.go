@@ -4,12 +4,14 @@ package monitorlogsstream_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/linode/linodego/v2"
@@ -247,6 +249,7 @@ func TestGetCreateOptions_LKEAuditLogs(t *testing.T) {
 	detailsObj, _ := types.ObjectValueFrom(ctx, streamDetailsAttrTypes(), monitorlogsstream.StreamDetailsModel{
 		ClusterIDs:                  clusterList,
 		IsAutoAddAllClustersEnabled: types.BoolValue(false),
+		VPNGatewayIDs:               types.SetNull(types.Int64Type),
 	})
 
 	m := monitorlogsstream.ResourceModel{
@@ -310,4 +313,140 @@ func TestGetUpdateOptions(t *testing.T) {
 	assert.Equal(t, []int{12345}, opts.Destinations)
 	require.NotNil(t, opts.Status)
 	assert.Equal(t, linodego.StreamStatusActive, *opts.Status)
+}
+
+func TestVPNGatewayStreamOptionsAndState(t *testing.T) {
+	ctx := context.Background()
+	for _, streamType := range []linodego.StreamType{
+		linodego.StreamTypeVPNGWIPSecLogs, linodego.StreamTypeVPNGWBGPLogs,
+	} {
+		t.Run(string(streamType), func(t *testing.T) {
+			gateways := types.SetValueMust(types.Int64Type, []attr.Value{
+				types.Int64Value(50), types.Int64Value(60),
+			})
+			details, d := types.ObjectValueFrom(ctx, streamDetailsAttrTypes(), monitorlogsstream.StreamDetailsModel{
+				ClusterIDs:                  types.ListNull(types.Int64Type),
+				IsAutoAddAllClustersEnabled: types.BoolNull(),
+				VPNGatewayIDs:               gateways,
+			})
+			require.False(t, d.HasError(), "%v", d)
+			m := monitorlogsstream.ResourceModel{
+				Label:        types.StringValue("VPN logs"),
+				Type:         types.StringValue(string(streamType)),
+				Destinations: types.ListValueMust(types.Int64Type, []attr.Value{types.Int64Value(1)}),
+				Details:      details,
+			}
+			var diags diag.Diagnostics
+			create := m.GetCreateOptions(ctx, &diags)
+			update := m.GetUpdateOptions(ctx, &diags)
+			require.False(t, diags.HasError(), "%v", diags)
+			for _, opts := range []any{create, update} {
+				body, err := json.Marshal(opts)
+				require.NoError(t, err)
+				var payload map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(body, &payload))
+				assert.JSONEq(t, `{"vpn_gateway_ids":[50,60]}`, string(payload["details"]))
+			}
+
+			stream := &linodego.Stream{
+				ID: 5, Type: streamType, Label: "VPN logs",
+				Details: &linodego.StreamDetails{VPNGatewayIDs: []int{60, 50}},
+			}
+			for _, preserve := range []bool{false, true} {
+				m.FlattenStream(ctx, stream, preserve, &diags)
+				require.False(t, diags.HasError(), "%v", diags)
+				assert.True(t, details.Equal(m.Details), "gateway ordering must not change state")
+			}
+			var data monitorlogsstream.DataSourceModel
+			data.FlattenStream(ctx, stream, &diags)
+			require.False(t, diags.HasError(), "%v", diags)
+			assert.True(t, details.Equal(data.Details))
+		})
+	}
+}
+
+func TestValidateVPNDetails(t *testing.T) {
+	ctx := context.Background()
+	gateways := types.SetValueMust(types.Int64Type, []attr.Value{types.Int64Value(50)})
+	tests := []struct {
+		name       string
+		streamType string
+		details    monitorlogsstream.StreamDetailsModel
+		wantError  bool
+	}{
+		{name: "valid VPN", streamType: "vpngw_ipsec_logs", details: monitorlogsstream.StreamDetailsModel{VPNGatewayIDs: gateways}},
+		{name: "missing IDs", streamType: "vpngw_bgp_logs", wantError: true},
+		{name: "empty IDs", streamType: "vpngw_bgp_logs", details: monitorlogsstream.StreamDetailsModel{
+			VPNGatewayIDs: types.SetValueMust(types.Int64Type, []attr.Value{}),
+		}, wantError: true},
+		{name: "LKE IDs on VPN", streamType: "vpngw_ipsec_logs", details: monitorlogsstream.StreamDetailsModel{
+			VPNGatewayIDs: gateways, ClusterIDs: types.ListValueMust(types.Int64Type, []attr.Value{types.Int64Value(50)}),
+		}, wantError: true},
+		{name: "explicit false LKE setting on VPN", streamType: "vpngw_ipsec_logs", details: monitorlogsstream.StreamDetailsModel{
+			VPNGatewayIDs: gateways, IsAutoAddAllClustersEnabled: types.BoolValue(false),
+		}, wantError: true},
+		{name: "VPN IDs on LKE", streamType: "lke_audit_logs", details: monitorlogsstream.StreamDetailsModel{
+			VPNGatewayIDs: gateways,
+		}, wantError: true},
+		{name: "VPN IDs on audit", streamType: "audit_logs", details: monitorlogsstream.StreamDetailsModel{
+			VPNGatewayIDs: gateways,
+		}, wantError: true},
+		{name: "unknown IDs deferred", streamType: "vpngw_bgp_logs", details: monitorlogsstream.StreamDetailsModel{
+			VPNGatewayIDs: types.SetUnknown(types.Int64Type),
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.details.ClusterIDs.IsNull() {
+				tt.details.ClusterIDs = types.ListNull(types.Int64Type)
+			}
+			if tt.details.VPNGatewayIDs.IsNull() {
+				tt.details.VPNGatewayIDs = types.SetNull(types.Int64Type)
+			}
+			details, d := types.ObjectValueFrom(ctx, streamDetailsAttrTypes(), tt.details)
+			require.False(t, d.HasError(), "%v", d)
+			m := monitorlogsstream.ResourceModel{Type: types.StringValue(tt.streamType), Details: details}
+			var diags diag.Diagnostics
+			m.ValidateVPNDetails(ctx, &diags)
+			assert.Equal(t, tt.wantError, diags.HasError(), "%v", diags)
+		})
+	}
+	t.Run("missing details", func(t *testing.T) {
+		m := monitorlogsstream.ResourceModel{
+			Type:    types.StringValue("vpngw_ipsec_logs"),
+			Details: types.ObjectNull(streamDetailsAttrTypes()),
+		}
+		var diags diag.Diagnostics
+		m.ValidateVPNDetails(ctx, &diags)
+		assert.True(t, diags.HasError())
+	})
+}
+
+func TestVPNGatewayIDsValidators(t *testing.T) {
+	ctx := context.Background()
+	details := monitorlogsstream.ResourceSchema.Attributes["details"].(schema.SingleNestedAttribute)
+	gateways := details.Attributes["vpn_gateway_ids"].(schema.SetAttribute)
+	for _, tt := range []struct {
+		name      string
+		value     types.Set
+		wantError bool
+	}{
+		{name: "positive", value: types.SetValueMust(types.Int64Type, []attr.Value{types.Int64Value(50)})},
+		{name: "empty", value: types.SetValueMust(types.Int64Type, []attr.Value{}), wantError: true},
+		{name: "zero", value: types.SetValueMust(types.Int64Type, []attr.Value{types.Int64Value(0)}), wantError: true},
+		{name: "negative", value: types.SetValueMust(types.Int64Type, []attr.Value{types.Int64Value(-1)}), wantError: true},
+		{name: "unknown", value: types.SetUnknown(types.Int64Type)},
+		{name: "null", value: types.SetNull(types.Int64Type)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var diags diag.Diagnostics
+			for _, v := range gateways.Validators {
+				var resp validator.SetResponse
+				v.ValidateSet(ctx, validator.SetRequest{ConfigValue: tt.value}, &resp)
+				diags.Append(resp.Diagnostics...)
+			}
+			assert.Equal(t, tt.wantError, diags.HasError(), "%v", diags)
+		})
+	}
 }

@@ -29,6 +29,19 @@ type Resource struct {
 	helper.BaseResource
 }
 
+// ValidateConfig rejects incompatible stream details before making API requests.
+func (r *Resource) ValidateConfig(
+	ctx context.Context,
+	req resource.ValidateConfigRequest,
+	resp *resource.ValidateConfigResponse,
+) {
+	var data ResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if !resp.Diagnostics.HasError() {
+		data.ValidateVPNDetails(ctx, &resp.Diagnostics)
+	}
+}
+
 func (r *Resource) Create(
 	ctx context.Context,
 	req resource.CreateRequest,

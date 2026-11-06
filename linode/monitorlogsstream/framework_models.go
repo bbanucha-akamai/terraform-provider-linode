@@ -16,12 +16,14 @@ import (
 var streamDetailsAttrTypes = map[string]attr.Type{
 	"cluster_ids":                      types.ListType{ElemType: types.Int64Type},
 	"is_auto_add_all_clusters_enabled": types.BoolType,
+	"vpn_gateway_ids":                  types.SetType{ElemType: types.Int64Type},
 }
 
-// StreamDetailsModel holds the details block for an lke_audit_logs stream.
+// StreamDetailsModel holds the LKE or VPN Gateway configuration.
 type StreamDetailsModel struct {
 	ClusterIDs                  types.List `tfsdk:"cluster_ids"`
 	IsAutoAddAllClustersEnabled types.Bool `tfsdk:"is_auto_add_all_clusters_enabled"`
+	VPNGatewayIDs               types.Set  `tfsdk:"vpn_gateway_ids"`
 }
 
 // ResourceModel represents the linode_monitor_logs_stream resource state.
@@ -88,7 +90,7 @@ func (m *ResourceModel) FlattenStream(
 		m.Destinations = helper.KeepOrUpdateValue(m.Destinations, destList, preserveKnown)
 	}
 
-	m.Details = flattenStreamDetails(ctx, stream.Details, m.Details, preserveKnown, diags)
+	m.Details = FlattenStreamDetails(ctx, stream.Details, m.Details, preserveKnown, diags)
 }
 
 // FlattenStream populates the DataSourceModel from a linodego.Stream.
@@ -120,6 +122,7 @@ func (m *ResourceModel) GetCreateOptions(
 	ctx context.Context,
 	diags *diag.Diagnostics,
 ) linodego.StreamCreateOptions {
+	m.ValidateVPNDetails(ctx, diags)
 	opts := linodego.StreamCreateOptions{
 		Label: m.Label.ValueString(),
 		Type:  linodego.StreamType(m.Type.ValueString()),
@@ -152,6 +155,7 @@ func (m *ResourceModel) GetUpdateOptions(
 	ctx context.Context,
 	diags *diag.Diagnostics,
 ) linodego.StreamUpdateOptions {
+	m.ValidateVPNDetails(ctx, diags)
 	opts := linodego.StreamUpdateOptions{
 		Label: linodego.Pointer(m.Label.ValueString()),
 	}
@@ -180,7 +184,8 @@ func (m *ResourceModel) GetUpdateOptions(
 	return opts
 }
 
-func flattenStreamDetails(
+// FlattenStreamDetails converts API details to resource, data source, or history state.
+func FlattenStreamDetails(
 	ctx context.Context,
 	details *linodego.StreamDetails,
 	original types.Object,
@@ -194,6 +199,18 @@ func flattenStreamDetails(
 	return *helper.KeepOrUpdateSingleNestedAttributesWithTypes(
 		ctx, original, streamDetailsAttrTypes, preserveKnown, diags,
 		func(model *StreamDetailsModel, isNull *bool, preserveKnown bool, diags *diag.Diagnostics) {
+			if details.VPNGatewayIDs != nil {
+				gatewayIDs := helper.MapSlice(details.VPNGatewayIDs, func(id int) int64 { return int64(id) })
+				gatewaySet, d := types.SetValueFrom(ctx, types.Int64Type, gatewayIDs)
+				diags.Append(d...)
+				if !diags.HasError() {
+					model.VPNGatewayIDs = helper.KeepOrUpdateValue(model.VPNGatewayIDs, gatewaySet, preserveKnown)
+				}
+				model.ClusterIDs = types.ListNull(types.Int64Type)
+				model.IsAutoAddAllClustersEnabled = types.BoolNull()
+				return
+			}
+			model.VPNGatewayIDs = types.SetNull(types.Int64Type)
 			clusterIDs := helper.MapSlice(details.ClusterIDs, func(id int) int64 { return int64(id) })
 			clusterList, d := types.ListValueFrom(ctx, types.Int64Type, clusterIDs)
 			diags.Append(d...)
@@ -214,6 +231,16 @@ func buildStreamDetailsOptions(
 	model StreamDetailsModel,
 	diags *diag.Diagnostics,
 ) *linodego.StreamDetails {
+	if !model.VPNGatewayIDs.IsNull() && !model.VPNGatewayIDs.IsUnknown() {
+		var gatewayIDs []int64
+		diags.Append(model.VPNGatewayIDs.ElementsAs(ctx, &gatewayIDs, false)...)
+		details := &linodego.StreamDetails{VPNGatewayIDs: make([]int, len(gatewayIDs))}
+		for i, id := range gatewayIDs {
+			details.VPNGatewayIDs[i] = helper.FrameworkSafeInt64ToInt(id, diags)
+		}
+		return details
+	}
+
 	details := &linodego.StreamDetails{
 		IsAutoAddAllClustersEnabled: model.IsAutoAddAllClustersEnabled.ValueBool(),
 	}
