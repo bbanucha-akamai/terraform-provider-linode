@@ -59,6 +59,8 @@ In addition to all arguments above, the following attributes are exported:
 
 ### details
 
+* `categories` - The set of audit log categories included in this stream version: `config`, `login`, or `data_plane`. Populated for `audit_logs` streams.
+
 * `cluster_ids` - The LKE cluster IDs included in this stream version.
 
 * `is_auto_add_all_clusters_enabled` - Whether all clusters were auto-added at this version.

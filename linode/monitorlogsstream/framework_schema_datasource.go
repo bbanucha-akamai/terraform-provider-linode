@@ -34,9 +34,14 @@ var frameworkDataSourceSchema = schema.Schema{
 			ElementType: types.Int64Type,
 		},
 		"details": schema.SingleNestedAttribute{
-			Description: "Additional configuration details. Only applies to lke_audit_logs streams.",
+			Description: "Additional configuration details for audit_logs or lke_audit_logs streams.",
 			Computed:    true,
 			Attributes: map[string]schema.Attribute{
+				"categories": schema.SetAttribute{
+					Description: "The audit log categories included in this stream.",
+					Computed:    true,
+					ElementType: types.StringType,
+				},
 				"cluster_ids": schema.ListAttribute{
 					Description: "The list of LKE cluster IDs included in this stream.",
 					Computed:    true,

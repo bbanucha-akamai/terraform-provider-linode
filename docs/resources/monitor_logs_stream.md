@@ -45,6 +45,20 @@ resource "linode_monitor_logs_stream" "example" {
 }
 ```
 
+Creating an audit logs stream with data plane logs:
+
+```terraform
+resource "linode_monitor_logs_stream" "data_plane_example" {
+  label        = "my-data-plane-stream"
+  type         = "audit_logs"
+  destinations = [linode_monitor_logs_destination.destination.id]
+
+  details = {
+    categories = ["data_plane"]
+  }
+}
+```
+
 Creating an LKE audit logs stream with specific cluster IDs:
 
 ```terraform
@@ -74,9 +88,11 @@ The following arguments are supported:
 
 * `status` - (Optional) The status of the logs stream. One of: `active`, `inactive`, `provisioning`, `deactivating`.
 
-* [`details`](#details) - (Optional, Nested Attribute) Additional configuration details. Only applies to `lke_audit_logs` streams. Referenced directly (e.g. `details.cluster_ids`).
+* [`details`](#details) - (Optional, Nested Attribute) Additional configuration for `audit_logs` or `lke_audit_logs` streams. Referenced directly (e.g. `details.categories`).
 
 ### details
+
+* `categories` - (Optional, Set of String) The categories included in an `audit_logs` stream. Allowed values: `config`, `login`, `data_plane`. Cannot be combined with LKE settings. Omitting categories or specifying an empty set lets the API select its defaults on creation, or preserves the current selection on update. An empty set leaves categories unmanaged and remains empty in resource state; use the stream data source to read the actual selection. A non-empty set replaces the selection; ordering does not affect the Terraform plan.
 
 * `cluster_ids` - (Optional) The list of LKE cluster IDs to include in this stream.
 

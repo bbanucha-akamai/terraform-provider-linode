@@ -51,9 +51,11 @@ In addition to all arguments above, the following attributes are exported:
 
 * `updated_by` - The user who last updated the logs stream.
 
-* [`details`](#details) - (Nested Attribute) Additional configuration details. Only populated for `lke_audit_logs` streams. Referenced directly (e.g. `details.cluster_ids`).
+* [`details`](#details) - (Nested Attribute) Additional configuration for `audit_logs` or `lke_audit_logs` streams. Referenced directly (e.g. `details.categories`).
 
 ### details
+
+* `categories` - The set of audit log categories included in this stream: `config`, `login`, or `data_plane`. Populated for `audit_logs` streams.
 
 * `cluster_ids` - The list of LKE cluster IDs included in this stream.
 

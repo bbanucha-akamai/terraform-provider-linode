@@ -5,17 +5,12 @@ import (
 	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework-timetypes/timetypes"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/linode/linodego/v2"
 	"github.com/linode/terraform-provider-linode/v4/linode/helper"
+	"github.com/linode/terraform-provider-linode/v4/linode/monitorlogsstream"
 )
-
-var streamDetailsAttrTypes = map[string]attr.Type{
-	"cluster_ids":                      types.ListType{ElemType: types.Int64Type},
-	"is_auto_add_all_clusters_enabled": types.BoolType,
-}
 
 // StreamHistoryEntryModel represents a single historical version of a stream.
 type StreamHistoryEntryModel struct {
@@ -65,24 +60,7 @@ func flattenStreamHistoryEntry(
 		entry.Destinations = destList
 	}
 
-	if stream.Details != nil {
-		clusterIDs := helper.MapSlice(stream.Details.ClusterIDs, func(id int) int64 { return int64(id) })
-		clusterList, d := types.ListValueFrom(ctx, types.Int64Type, clusterIDs)
-		diags.Append(d...)
-
-		if diags.HasError() {
-			entry.Details = types.ObjectNull(streamDetailsAttrTypes)
-		} else {
-			detailsObj, d := types.ObjectValue(streamDetailsAttrTypes, map[string]attr.Value{
-				"cluster_ids":                      clusterList,
-				"is_auto_add_all_clusters_enabled": types.BoolValue(stream.Details.IsAutoAddAllClustersEnabled),
-			})
-			diags.Append(d...)
-			entry.Details = detailsObj
-		}
-	} else {
-		entry.Details = types.ObjectNull(streamDetailsAttrTypes)
-	}
+	entry.Details = monitorlogsstream.FlattenStreamDetails(ctx, stream.Details, types.Object{}, false, diags)
 
 	return entry
 }

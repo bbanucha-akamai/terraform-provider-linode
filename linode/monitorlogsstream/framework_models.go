@@ -14,12 +14,14 @@ import (
 )
 
 var streamDetailsAttrTypes = map[string]attr.Type{
+	"categories":                       types.SetType{ElemType: types.StringType},
 	"cluster_ids":                      types.ListType{ElemType: types.Int64Type},
 	"is_auto_add_all_clusters_enabled": types.BoolType,
 }
 
-// StreamDetailsModel holds the details block for an lke_audit_logs stream.
+// StreamDetailsModel holds audit log categories or LKE configuration.
 type StreamDetailsModel struct {
+	Categories                  types.Set  `tfsdk:"categories"`
 	ClusterIDs                  types.List `tfsdk:"cluster_ids"`
 	IsAutoAddAllClustersEnabled types.Bool `tfsdk:"is_auto_add_all_clusters_enabled"`
 }
@@ -88,7 +90,7 @@ func (m *ResourceModel) FlattenStream(
 		m.Destinations = helper.KeepOrUpdateValue(m.Destinations, destList, preserveKnown)
 	}
 
-	m.Details = flattenStreamDetails(ctx, stream.Details, m.Details, preserveKnown, diags)
+	m.Details = FlattenStreamDetails(ctx, stream.Details, m.Details, preserveKnown, diags)
 }
 
 // FlattenStream populates the DataSourceModel from a linodego.Stream.
@@ -98,7 +100,6 @@ func (m *DataSourceModel) FlattenStream(
 	diags *diag.Diagnostics,
 ) {
 	rm := ResourceModel{
-		Details:      m.Details,
 		Destinations: m.Destinations,
 	}
 	rm.FlattenStream(ctx, stream, false, diags)
@@ -120,6 +121,11 @@ func (m *ResourceModel) GetCreateOptions(
 	ctx context.Context,
 	diags *diag.Diagnostics,
 ) linodego.StreamCreateOptions {
+	m.ValidateAuditDetails(ctx, diags)
+	if diags.HasError() {
+		return linodego.StreamCreateOptions{}
+	}
+
 	opts := linodego.StreamCreateOptions{
 		Label: m.Label.ValueString(),
 		Type:  linodego.StreamType(m.Type.ValueString()),
@@ -140,7 +146,7 @@ func (m *ResourceModel) GetCreateOptions(
 		var detailsModel StreamDetailsModel
 		diags.Append(m.Details.As(ctx, &detailsModel, basetypes.ObjectAsOptions{})...)
 		if !diags.HasError() {
-			opts.Details = buildStreamDetailsOptions(ctx, detailsModel, diags)
+			opts.Details = buildStreamDetailsOptions(ctx, m.Type.ValueString(), detailsModel, diags)
 		}
 	}
 
@@ -152,6 +158,11 @@ func (m *ResourceModel) GetUpdateOptions(
 	ctx context.Context,
 	diags *diag.Diagnostics,
 ) linodego.StreamUpdateOptions {
+	m.ValidateAuditDetails(ctx, diags)
+	if diags.HasError() {
+		return linodego.StreamUpdateOptions{}
+	}
+
 	opts := linodego.StreamUpdateOptions{
 		Label: linodego.Pointer(m.Label.ValueString()),
 	}
@@ -173,14 +184,15 @@ func (m *ResourceModel) GetUpdateOptions(
 		var detailsModel StreamDetailsModel
 		diags.Append(m.Details.As(ctx, &detailsModel, basetypes.ObjectAsOptions{})...)
 		if !diags.HasError() {
-			opts.Details = buildStreamDetailsOptions(ctx, detailsModel, diags)
+			opts.Details = buildStreamDetailsOptions(ctx, m.Type.ValueString(), detailsModel, diags)
 		}
 	}
 
 	return opts
 }
 
-func flattenStreamDetails(
+// FlattenStreamDetails converts API details to resource or data source state.
+func FlattenStreamDetails(
 	ctx context.Context,
 	details *linodego.StreamDetails,
 	original types.Object,
@@ -191,9 +203,32 @@ func flattenStreamDetails(
 		return types.ObjectNull(streamDetailsAttrTypes)
 	}
 
-	return *helper.KeepOrUpdateSingleNestedAttributesWithTypes(
+	preserveEmptyCategories := false
+	if !preserveKnown && !original.IsNull() && !original.IsUnknown() {
+		var model StreamDetailsModel
+		diags.Append(original.As(ctx, &model, basetypes.ObjectAsOptions{})...)
+		if diags.HasError() {
+			return types.ObjectNull(streamDetailsAttrTypes)
+		}
+		preserveEmptyCategories = !model.Categories.IsNull() &&
+			!model.Categories.IsUnknown() && len(model.Categories.Elements()) == 0
+	}
+
+	result := helper.KeepOrUpdateSingleNestedAttributesWithTypes(
 		ctx, original, streamDetailsAttrTypes, preserveKnown, diags,
 		func(model *StreamDetailsModel, isNull *bool, preserveKnown bool, diags *diag.Diagnostics) {
+			if details.Categories != nil {
+				categories, d := types.SetValueFrom(ctx, types.StringType, details.Categories)
+				diags.Append(d...)
+				if !diags.HasError() && !preserveEmptyCategories {
+					model.Categories = helper.KeepOrUpdateValue(model.Categories, categories, preserveKnown)
+				}
+				model.ClusterIDs = types.ListNull(types.Int64Type)
+				model.IsAutoAddAllClustersEnabled = types.BoolNull()
+				return
+			}
+
+			model.Categories = types.SetNull(types.StringType)
 			clusterIDs := helper.MapSlice(details.ClusterIDs, func(id int) int64 { return int64(id) })
 			clusterList, d := types.ListValueFrom(ctx, types.Int64Type, clusterIDs)
 			diags.Append(d...)
@@ -207,13 +242,30 @@ func flattenStreamDetails(
 			)
 		},
 	)
+	if result == nil {
+		return types.ObjectNull(streamDetailsAttrTypes)
+	}
+	return *result
 }
 
 func buildStreamDetailsOptions(
 	ctx context.Context,
+	streamType string,
 	model StreamDetailsModel,
 	diags *diag.Diagnostics,
 ) *linodego.StreamDetails {
+	if streamType == string(linodego.StreamTypeAuditLogs) {
+		if model.Categories.IsNull() || model.Categories.IsUnknown() || len(model.Categories.Elements()) == 0 {
+			return nil
+		}
+		var categories []string
+		diags.Append(model.Categories.ElementsAs(ctx, &categories, false)...)
+		if diags.HasError() {
+			return nil
+		}
+		return &linodego.StreamDetails{Categories: categories}
+	}
+
 	details := &linodego.StreamDetails{
 		IsAutoAddAllClustersEnabled: model.IsAutoAddAllClustersEnabled.ValueBool(),
 	}

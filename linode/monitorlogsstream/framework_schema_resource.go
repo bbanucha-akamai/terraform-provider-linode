@@ -2,6 +2,7 @@ package monitorlogsstream
 
 import (
 	"github.com/hashicorp/terraform-plugin-framework-timetypes/timetypes"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -9,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -55,13 +57,25 @@ var frameworkResourceSchema = schema.Schema{
 			ElementType: types.Int64Type,
 		},
 		"details": schema.SingleNestedAttribute{
-			Description: "Additional configuration details. Only applies to lke_audit_logs streams.",
+			Description: "Additional configuration details for audit_logs or lke_audit_logs streams.",
 			Optional:    true,
 			Computed:    true,
 			PlanModifiers: []planmodifier.Object{
 				objectplanmodifier.UseStateForUnknown(),
 			},
 			Attributes: map[string]schema.Attribute{
+				"categories": schema.SetAttribute{
+					Description: "Audit log categories: config, login, or data_plane. Only allowed for audit_logs; cannot be combined with LKE settings. Omit or specify an empty set to use API defaults on creation or preserve the selection on update. An empty set leaves categories unmanaged and remains empty in resource state; use the stream data source to read the actual selection.",
+					Optional:    true,
+					Computed:    true,
+					ElementType: types.StringType,
+					Validators: []validator.Set{
+						setvalidator.ValueStringsAre(stringvalidator.OneOf("config", "login", "data_plane")),
+					},
+					PlanModifiers: []planmodifier.Set{
+						setplanmodifier.UseStateForUnknown(),
+					},
+				},
 				"cluster_ids": schema.ListAttribute{
 					Description: "The list of LKE cluster IDs to include in this stream.",
 					Optional:    true,

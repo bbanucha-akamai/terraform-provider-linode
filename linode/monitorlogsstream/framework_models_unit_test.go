@@ -245,6 +245,7 @@ func TestGetCreateOptions_LKEAuditLogs(t *testing.T) {
 	clusterList, _ := types.ListValueFrom(ctx, types.Int64Type, []int64{1111, 2222})
 
 	detailsObj, _ := types.ObjectValueFrom(ctx, streamDetailsAttrTypes(), monitorlogsstream.StreamDetailsModel{
+		Categories:                  types.SetNull(types.StringType),
 		ClusterIDs:                  clusterList,
 		IsAutoAddAllClustersEnabled: types.BoolValue(false),
 	})

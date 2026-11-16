@@ -29,6 +29,18 @@ type Resource struct {
 	helper.BaseResource
 }
 
+func (r *Resource) ValidateConfig(
+	ctx context.Context,
+	req resource.ValidateConfigRequest,
+	resp *resource.ValidateConfigResponse,
+) {
+	var data ResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if !resp.Diagnostics.HasError() {
+		data.ValidateAuditDetails(ctx, &resp.Diagnostics)
+	}
+}
+
 func (r *Resource) Create(
 	ctx context.Context,
 	req resource.CreateRequest,

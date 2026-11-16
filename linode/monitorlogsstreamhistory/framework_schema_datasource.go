@@ -36,6 +36,11 @@ var streamHistoryAttributes = map[string]schema.Attribute{
 		Description: "Additional configuration details at this version.",
 		Computed:    true,
 		Attributes: map[string]schema.Attribute{
+			"categories": schema.SetAttribute{
+				Description: "The audit log categories included in this stream version.",
+				Computed:    true,
+				ElementType: types.StringType,
+			},
 			"cluster_ids": schema.ListAttribute{
 				Description: "The LKE cluster IDs included in this stream version.",
 				Computed:    true,
